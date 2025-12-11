@@ -2,6 +2,7 @@
 
 use App\Filament\Pages\RegistrarCliente;
 use App\Http\Controllers\ClienteController;
+use App\Http\Controllers\ProxyController;
 use Filament\Http\Middleware\Authenticate;
 use Illuminate\Support\Facades\Route;
 
@@ -9,17 +10,12 @@ Route::get('/', function () {
     return redirect('/clientes/create');
 });
 
-// Route::get('/registrar-cliente', function () {
-//     // Se instancia la página y se renderiza su contenido
-//     return app(RegistrarCliente::class)->render();
-// })
-// ->name('registrar.cliente')
-// ->withoutMiddleware([
-//     // Aquí se listan los middleware que deseas excluir, por ejemplo:
-//     Authenticate::class,
-//     // Si Filament usa otro middleware específico (por ejemplo, 'auth:filament'), agrégalo aquí:
-//     // 'auth:filament'
-// ]);
-
+// Rutas del formulario de clientes
 Route::get('/clientes/create', [ClienteController::class, 'create'])->name('clientes.create');
 Route::post('/clientes', [ClienteController::class, 'store'])->name('clientes.store');
+
+// Rutas del proxy a la API externa (con nombres)
+Route::get('/proxy/get-customer', [ProxyController::class, 'getCustomerByDocument'])
+    ->name('proxy.getCustomer');
+Route::post('/proxy/create-customer', [ProxyController::class, 'createCustomer'])
+    ->name('proxy.createCustomer');

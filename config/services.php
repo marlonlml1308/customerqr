@@ -37,7 +37,14 @@ return [
     'recaptcha' => [
         'key' => env('RECAPTCHA_SITE_KEY'),
         'secret' => env('RECAPTCHA_SECRET_KEY'),
-        'score' => env('RECAPTCHA_MINIMUN_SCORE',0.3),
+        'score' => env('RECAPTCHA_MINIMUN_SCORE', 0.3),
+    ],
+
+    'cizaro' => [
+        'url' => env('CIZARO_API_URL', 'http://localhost:5000/api'),
+        'key' => env('CIZARO_API_KEY', 'APIKey123'),
+        'branch_id' => env('CIZARO_BRANCH_ID', 1),
+        'company_id' => env('CIZARO_COMPANY_ID', 1),
     ],
 
 ];
