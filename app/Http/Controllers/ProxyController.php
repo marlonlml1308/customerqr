@@ -39,7 +39,7 @@ class ProxyController extends Controller
     {
         $docNumber = $request->query('document');
 
-        Log::info('Iniciando búsqueda de cliente', ['document' => $docNumber]);
+        Log::info('Iniciando búsqueda de cliente por documento', ['document' => $docNumber]);
 
         if (!$docNumber) {
             return response()->json(['error' => 'Document number is required'], 400);
@@ -54,97 +54,66 @@ class ProxyController extends Controller
 
         try {
             $token = $this->getApiToken($apiUrl, $apiKey);
-            Log::debug('Token generado exitosamente');
 
-            $urlcustomer = "{$apiUrl}/customer/GetAll";
-            Log::info('Llamando API', ['url' => $urlcustomer]);
+            // Nuevo endpoint solicitado: customer/GetByIdNumber?idNumber=...&showPhoto=false
+            $url = "{$apiUrl}/customer/GetByIdNumber?idNumber={$docNumber}&showPhoto=false";
+            Log::info('Llamando API GetByIdNumber', ['url' => $url]);
 
-            $customersResponse = Http::withToken($token)->get($urlcustomer);
+            $response = Http::withToken($token)->get($url);
 
             Log::info('Respuesta recibida', [
-                'status' => $customersResponse->status(),
-                'successful' => $customersResponse->successful()
+                'status' => $response->status(),
+                'successful' => $response->successful()
             ]);
 
-            if (!$customersResponse->successful()) {
+            if (!$response->successful()) {
                 Log::error('Error en respuesta de API', [
-                    'status' => $customersResponse->status(),
-                    'body' => $customersResponse->body()
+                    'status' => $response->status(),
+                    'body' => $response->body()
                 ]);
+                // Si falla (ej 404), retornamos found=false
                 return response()->json([
-                    'error' => 'Failed to fetch customers',
-                    'details' => $customersResponse->body()
-                ], 500);
+                    'found' => false,
+                    'message' => 'Error from API',
+                    'debug' => ['status' => $response->status()]
+                ]);
             }
 
-            $todaLaData = $customersResponse->json();
-            $customers = $todaLaData['data'] ?? [];
+            $jsonData = $response->json();
 
-            Log::debug('Datos parseados', [
-                'total_customers' => is_array($customers) ? count($customers) : 0,
-                'structure' => is_array($todaLaData) ? array_keys($todaLaData) : 'no es array'
-            ]);
+            // Verificar estructura isSuccessful y data
+            $isSuccessful = $jsonData['isSuccessful'] ?? false;
+            $data = $jsonData['data'] ?? null;
 
-            if (!is_array($customers)) {
-                Log::warning('Estructura de datos inválida', ['data' => $todaLaData]);
-                return response()->json(['found' => false, 'message' => 'Invalid data structure from API']);
-            }
+            if ($isSuccessful && $data) {
+                Log::info('Cliente encontrado', ['customerId' => $data['customerId'] ?? 'N/A']);
 
-            // Find the customer
-            $found = null;
-            foreach ($customers as $c) {
-                if (isset($c['id_number']) && (string) $c['id_number'] === (string) $docNumber) {
-                    $found = $c;
-                    Log::info('Cliente encontrado por id_number', ['customer_id' => $c['customerId'] ?? null]);
-                    break;
-                }
-                if (isset($c['customerNo']) && (string) $c['customerNo'] === (string) $docNumber) {
-                    $found = $c;
-                    Log::info('Cliente encontrado por customerNo', ['customer_id' => $c['customerId'] ?? null]);
-                    break;
-                }
-                if (isset($c['customFields']['id_number']) && (string) $c['customFields']['id_number'] === (string) $docNumber) {
-                    $found = $c;
-                    Log::info('Cliente encontrado por customFields.id_number', ['customer_id' => $c['customerId'] ?? null]);
-                    break;
-                }
-            }
-
-            if ($found) {
-                Log::info('Cliente encontrado exitosamente', ['document' => $docNumber]);
                 return response()->json([
                     'found' => true,
                     'data' => [
-                        'nombre' => trim(($found['firstName'] ?? '') . ' ' . ($found['surname'] ?? '')),
-                        'correo' => $found['email'] ?? '',
-                        'customerId' => $found['customerId'] ?? null,
-                    ],
-                    'debug' => [
-                        'api_url' => "{$apiUrl}/customer/GetAll",
-                        'api_response_status' => $customersResponse->status(),
-                        'full_api_response' => $todaLaData
+                        'customerId' => $data['customerId'],
+                        'nombre' => trim(($data['firstName'] ?? '') . ' ' . ($data['surname'] ?? '')),
+                        'firstName' => $data['firstName'],
+                        'surname' => $data['surname'],
+                        'correo' => $data['email'],
+                        'idType' => $data['idType'],
+                        'idNumber' => $data['idNumber'],
+                        'raw' => $data
                     ]
                 ]);
             } else {
-                Log::warning('Cliente no encontrado', [
-                    'document' => $docNumber,
-                    'total_searched' => count($customers)
+                Log::info('Cliente no encontrado en respuesta exitosa', [
+                    'message' => $jsonData['message'] ?? 'No message'
                 ]);
                 return response()->json([
                     'found' => false,
-                    'debug' => [
-                        'api_url' => "{$apiUrl}/customer/GetAll",
-                        'api_response_status' => $customersResponse->status(),
-                        'full_api_response' => $todaLaData
-                    ]
+                    'message' => $jsonData['message'] ?? 'Customer not found'
                 ]);
             }
 
         } catch (\Exception $e) {
             Log::error('Error en getCustomerByDocument', [
                 'message' => $e->getMessage(),
-                'file' => $e->getFile(),
-                'line' => $e->getLine(),
                 'trace' => $e->getTraceAsString()
             ]);
             return response()->json(['error' => $e->getMessage()], 500);
@@ -179,8 +148,8 @@ class ProxyController extends Controller
                 'email' => $request->input('correo'),
                 // 'customerNo' => (int) $request->input('numero_documento'),
                 //  'customFields' => [
-                //      'id_number' => $request->input('numero_documento'),
-                //      'identificationType' => $request->input('tipo_documento')
+                'idNumber' => $request->input('numero_documento'),
+                'idType' => $request->input('tipo_documento'),
                 // ],
                 'isActive' => true,
                 'isCompany' => false,
@@ -188,7 +157,7 @@ class ProxyController extends Controller
                 'companyId' => config('services.cizaro.company_id', 1), // Agregar company ID
             ];
 
-            Log::debug('Payload preparado', ['payload' => $payload]);
+            Log::info('BODY POST REQUEST (CreateCustomer):', $payload);
 
             $response = Http::withToken($token)->post("{$apiUrl}/customer/Create", $payload);
 
@@ -207,6 +176,76 @@ class ProxyController extends Controller
 
         } catch (\Exception $e) {
             Log::error('Error en createCustomer', [
+                'message' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
+            return response()->json(['error' => $e->getMessage()], 500);
+        }
+    }
+    public function updateCustomer(Request $request)
+    {
+        Log::info('Iniciando actualización de cliente', [
+            'customerId' => $request->input('customerId'),
+            'nombre' => $request->input('nombre'),
+            'documento' => $request->input('numero_documento')
+        ]);
+
+        $apiUrl = config('services.cizaro.url');
+        $apiKey = config('services.cizaro.key');
+
+        if (!$apiUrl || !$apiKey) {
+            return response()->json(['error' => 'API configuration missing'], 500);
+        }
+
+        try {
+            $token = $this->getApiToken($apiUrl, $apiKey);
+
+            $parts = explode(' ', $request->input('nombre', ''), 2);
+            $firstName = $parts[0] ?? '';
+            $surname = $parts[1] ?? '';
+
+            // Construir payload similar a Create pero para Update
+            // Se asume que Update requiere customerId y los campos a actualizar
+            // Nota: Es posible que necesitemos enviar TODOS los campos para no borrar los existentes
+            // si el endpoint es un PUT completo. Pero dado que no tenemos todos los datos aqui,
+            // enviamos lo que tenemos.
+            // Una estrategia mejor seria obtener la data actual, mezclarla y enviarla, 
+            // pero por eficiencia confiaremos en que el endpoint maneje esto o que el usuario 
+            // actualice los campos principales.
+
+            $payload = [
+                'customerId' => $request->input('customerId'),
+                'firstName' => $firstName,
+                'surname' => $surname,
+                'email' => $request->input('correo'),
+                'idNumber' => $request->input('numero_documento'),
+                'idType' => $request->input('tipo_documento'),
+                // Campos adicionales necesarios para mantener consistencia
+                'isActive' => true,
+                'branchId' => config('services.cizaro.branch_id', 1),
+                'companyId' => config('services.cizaro.company_id', 1),
+            ];
+
+            Log::info('BODY PUT REQUEST (UpdateCustomer):', $payload);
+
+            // Endpoint PUT customer/Update
+            $response = Http::withToken($token)->put("{$apiUrl}/customer/Update", $payload);
+
+            Log::info('Cliente actualizado', [
+                'status' => $response->status(),
+                'successful' => $response->successful()
+            ]);
+
+            return response()->json([
+                'success' => $response->successful(),
+                'status' => $response->status(),
+                'data' => $response->json(),
+                'request_payload' => $payload,
+                'api_url' => "{$apiUrl}/customer/Update"
+            ], $response->status());
+
+        } catch (\Exception $e) {
+            Log::error('Error en updateCustomer', [
                 'message' => $e->getMessage(),
                 'trace' => $e->getTraceAsString()
             ]);

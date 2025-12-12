@@ -27,7 +27,7 @@ class ClienteController extends Controller
     // Procesa el envío del formulario
     public function store(Request $request)
     {
-        Log::info('Inicio de proceso de registro de cliente', [
+        Log::info('Inicio de proceso de registro/actualización de cliente', [
             'datos_recibidos' => $request->except('g-recaptcha-response')
         ]);
 
@@ -77,98 +77,114 @@ class ClienteController extends Controller
                 ->withInput();
         }
 
-        // Verificar si el cliente ya existe en la API (llamada directa al controller)
-        try {
-            Log::info('Verificando si el cliente existe en la API', [
-                'documento' => $request->numero_documento
-            ]);
+        // Determinar si es Create o Update
+        $customerId = $request->input('customer_id');
+        $docNumber = $request->numero_documento;
 
-            // Crear un Request simulado para el ProxyController
-            $checkRequest = Request::create('/proxy/get-customer', 'GET', [
-                'document' => $request->numero_documento
-            ]);
+        // Si no viene customer_id, verificamos si existe en la API (Update implícito para robustez)
+        if (empty($customerId)) {
+            try {
+                Log::info('Verificando existencia en API para determinar acción', ['documento' => $docNumber]);
 
-            $checkResponse = $this->proxyController->getCustomerByDocument($checkRequest);
-            $checkResult = json_decode($checkResponse->getContent(), true);
+                $checkRequest = Request::create('/proxy/get-customer', 'GET', ['document' => $docNumber]);
+                $checkResponse = $this->proxyController->getCustomerByDocument($checkRequest);
+                $checkResult = json_decode($checkResponse->getContent(), true);
 
-            if ($checkResult['found'] ?? false) {
-                Log::warning('Cliente ya existe en la API', [
-                    'documento' => $request->numero_documento,
-                    'cliente' => $checkResult['data'] ?? null
-                ]);
-
-                return redirect()->back()
-                    ->withErrors(['numero_documento' => 'Este número de documento ya está registrado en el sistema.'])
-                    ->withInput();
+                if ($checkResult['found'] ?? false) {
+                    $customerId = $checkResult['data']['customerId'] ?? null;
+                    Log::info('Cliente ya existe, cambiando flujo a Update', ['customerId' => $customerId]);
+                }
+            } catch (\Exception $e) {
+                Log::warning('Error verificando cliente y no hay ID, se intentará crear', ['error' => $e->getMessage()]);
             }
-
-            Log::info('Cliente no existe en API, procediendo con creación');
-
-        } catch (\Exception $e) {
-            Log::error('Error verificando cliente existente', [
-                'error' => $e->getMessage(),
-                'trace' => $e->getTraceAsString()
-            ]);
-            // Continuamos con la creación aunque falle la verificación
         }
 
-        // Enviar datos a la API externa (llamada directa al ProxyController)
-        try {
-            Log::info('Enviando datos a la API externa');
+        if ($customerId) {
+            // --- ACTUALIZACIÓN (PUT) ---
+            try {
+                Log::info('Ejecutando actualización de cliente', ['customerId' => $customerId]);
 
-            // Crear un Request simulado para createCustomer
-            $createRequest = Request::create('/proxy/create-customer', 'POST', [
-                'nombre' => $request->nombre,
-                'numero_documento' => $request->numero_documento,
-                'tipo_documento' => $request->tipo_documento,
-                'correo' => $request->correo,
-            ]);
-
-            $apiResponse = $this->proxyController->createCustomer($createRequest);
-            $apiResult = json_decode($apiResponse->getContent(), true);
-
-            Log::info('Respuesta completa de la API', [
-                'status' => $apiResponse->status(),
-                'full_response' => $apiResult
-            ]);
-
-            // Verificar si la API realmente creó el cliente
-            $apiData = $apiResult['data'] ?? [];
-            $isSuccessful = $apiData['isSuccessful'] ?? false;
-            $apiMessage = $apiData['message'] ?? 'Error desconocido en la API';
-            $apiStatusCode = $apiData['statusCode'] ?? null;
-
-            if ($apiResponse->status() >= 200 && $apiResponse->status() < 300 && $isSuccessful) {
-                Log::info('Cliente creado exitosamente en la API', [
-                    'documento' => $request->numero_documento,
-                    'api_message' => $apiMessage
+                $updateRequest = Request::create('/proxy/update-customer', 'PUT', [
+                    'customerId' => $customerId,
+                    'nombre' => $request->nombre,
+                    'numero_documento' => $request->numero_documento,
+                    'tipo_documento' => $request->tipo_documento,
+                    'correo' => $request->correo,
                 ]);
 
-                return redirect()->back()->with('success', '¡Cliente registrado correctamente en el sistema!');
-            } else {
-                // La API respondió 200 pero isSuccessful = false
-                Log::error('La API retornó error en el contenido', [
-                    'status' => $apiResponse->status(),
-                    'isSuccessful' => $isSuccessful,
-                    'message' => $apiMessage,
-                    'statusCode' => $apiStatusCode,
-                    'full_response' => $apiResult
-                ]);
+                $apiResponse = $this->proxyController->updateCustomer($updateRequest);
+                $apiResult = json_decode($apiResponse->getContent(), true);
 
-                return redirect()->back()
-                    ->withErrors(['api' => "Error al registrar el cliente: {$apiMessage}"])
-                    ->withInput();
+                $statusCode = $apiResponse->getStatusCode();
+                $isSuccessfulHttp = ($statusCode >= 200 && $statusCode < 300);
+
+                // Verificar éxito lógico de API 
+                $apiData = $apiResult['data'] ?? [];
+
+                // La API real devuelve "isSuccessful" dentro de "data" o en el root?
+                // Según logs anteriores: "data": { ... "isSuccessful": true ... } no, wait.
+                // En el XML request del usuario:
+                // "isSuccessful": true,
+                // "message": "...",
+                // "data": { ... }
+                // O sea isSuccessful está en el root del JSON de la API externa.
+
+                // ProxyController devuelve: 'data' => $response->json().
+                // Asi que $apiResult['data'] contiene la respuesta completa de la API externa.
+                // Entonces $apiResult['data']['isSuccessful'] debería ser el valor.
+
+                $apiExternalResponse = $apiResult['data'] ?? [];
+                $isLogicSuccess = $apiExternalResponse['isSuccessful'] ?? false;
+
+                if ($isSuccessfulHttp && ($apiResult['success'] ?? false) && $isLogicSuccess) {
+                    Log::info('Cliente actualizado correctamente');
+                    return redirect()->back()->with('success', '¡Datos del cliente actualizados correctamente!');
+                } else {
+                    $msg = $apiExternalResponse['message'] ?? 'Error desconocido al actualizar';
+                    Log::error('Fallo en actualización', ['response' => $apiResult]);
+                    return redirect()->back()->withErrors(['api' => "Error al actualizar: {$msg}"])->withInput();
+                }
+
+            } catch (\Exception $e) {
+                Log::error('Excepción al actualizar', ['error' => $e->getMessage()]);
+                return redirect()->back()->withErrors(['api' => 'Error procesando la actualización.'])->withInput();
             }
 
-        } catch (\Exception $e) {
-            Log::error('Excepción al comunicarse con la API', [
-                'error' => $e->getMessage(),
-                'trace' => $e->getTraceAsString()
-            ]);
+        } else {
+            // --- CREACIÓN (POST) ---
+            try {
+                Log::info('Ejecutando creación de nuevo cliente');
 
-            return redirect()->back()
-                ->withErrors(['api' => 'Error de comunicación con el sistema. Por favor, intenta más tarde.'])
-                ->withInput();
+                $createRequest = Request::create('/proxy/create-customer', 'POST', [
+                    'nombre' => $request->nombre,
+                    'numero_documento' => $request->numero_documento,
+                    'tipo_documento' => $request->tipo_documento,
+                    'correo' => $request->correo,
+                ]);
+
+                $apiResponse = $this->proxyController->createCustomer($createRequest);
+                $apiResult = json_decode($apiResponse->getContent(), true);
+
+                $statusCode = $apiResponse->getStatusCode();
+                $isSuccessfulHttp = ($statusCode >= 200 && $statusCode < 300);
+
+                // $apiResult['data'] es la respuesta de la API externa (proxy)
+                $apiExternalResponse = $apiResult['data'] ?? [];
+                $isLogicSuccess = $apiExternalResponse['isSuccessful'] ?? false;
+                $apiMessage = $apiExternalResponse['message'] ?? 'Error desconocido';
+
+                if ($isSuccessfulHttp && ($apiResult['success'] ?? false) && $isLogicSuccess) {
+                    Log::info('Cliente creado exitosamente');
+                    return redirect()->back()->with('success', '¡Cliente registrado correctamente en el sistema!');
+                } else {
+                    Log::error('Fallo en creación', ['msg' => $apiMessage, 'full' => $apiResult]);
+                    return redirect()->back()->withErrors(['api' => "Error al registrar el cliente: {$apiMessage}"])->withInput();
+                }
+
+            } catch (\Exception $e) {
+                Log::error('Excepción al crear', ['error' => $e->getMessage()]);
+                return redirect()->back()->withErrors(['api' => 'Error de comunicación con el sistema.'])->withInput();
+            }
         }
     }
 }

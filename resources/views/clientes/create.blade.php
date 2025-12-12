@@ -37,6 +37,8 @@
 
     <form action="{{ route('clientes.store') }}" method="POST" id="demo-form">
       @csrf
+      <!-- Campo oculto para ID de cliente (update mode) -->
+      <input type="hidden" name="customer_id" id="customer_id">
 
       <!-- Campo: Número de Documento -->
       <div class="relative mb-6">
@@ -130,7 +132,7 @@
           </div>
           <input type="email" name="correo" id="correo" value="{{ old('correo') }}"
             class="block w-full h-11 pr-5 pl-12 py-2.5 text-base font-normal shadow-xs text-gray-100 bg-gray-800 border border-gray-600 rounded-full placeholder-gray-500 focus:outline-none"
-            placeholder="Ingrese correo electrónico" pattern="[A-Za-z0-9._%-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,4}" required>
+            placeholder="Ingrese correo electrónico" pattern="[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}" required>
         </div>
       </div>
 
@@ -151,12 +153,17 @@
     const LOG_PREFIX = '[CustomerForm]';
 
     // Autocompletar cuando se ingresa un documento
+    // Autocompletar cuando se ingresa un documento
     const docInput = document.getElementById('numero_documento');
     docInput.addEventListener('blur', async function () {
       const docNumber = this.value;
       if (!docNumber) return;
 
       console.log(`${LOG_PREFIX} Buscando cliente con documento: ${docNumber}`);
+
+      // Limpiar ID por si el usuario cambia el documento
+      const customerIdInput = document.getElementById('customer_id');
+      if (customerIdInput) customerIdInput.value = '';
 
       try {
         const response = await fetch(`/proxy/get-customer?document=${encodeURIComponent(docNumber)}`);
@@ -170,9 +177,21 @@
         console.log(`${LOG_PREFIX} Respuesta:`, result);
 
         if (result.found && result.data) {
+          if (customerIdInput) customerIdInput.value = result.data.customerId || '';
+
           document.getElementById('nombre').value = result.data.nombre || '';
           document.getElementById('correo').value = result.data.correo || '';
-          console.log(`${LOG_PREFIX} Formulario autocompletado`);
+
+          // Asignar tipo de documento si existe en el select
+          const tipoSelect = document.getElementById('tipo_documento');
+          if (result.data.idType) {
+            const optionInfo = tipoSelect.querySelector(`option[value="${result.data.idType}"]`);
+            if (optionInfo) {
+              tipoSelect.value = result.data.idType;
+            }
+          }
+
+          console.log(`${LOG_PREFIX} Formulario autocompletado (Cliente Existente)`);
         } else {
           console.log(`${LOG_PREFIX} Cliente no encontrado`);
         }
