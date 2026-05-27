@@ -13,8 +13,8 @@
   <div class="max-w-md mx-auto mt-10 p-6">
     <!-- Logo -->
     <div class="flex justify-center mb-4">
-      <img src="https://sotocoffee.com.co/wp-content/uploads/2020/11/SotoCoffeeLogoBlanco-300x300.png" alt="Logo"
-        class="h-32">
+      <img src="{{ asset('img/logo.jpg') }}" alt="Logo"
+        class="h-32 object-contain rounded-md shadow-md">
     </div>
 
     <h1 class="text-2xl font-bold text-center mb-6">Registrar Cliente</h1>
@@ -60,6 +60,45 @@
             class="block w-full h-11 pr-5 pl-12 py-2.5 text-base font-normal shadow-xs text-gray-100 bg-gray-800 border border-gray-600 rounded-full placeholder-gray-500 focus:outline-none"
             placeholder="Ingrese número de documento" required>
         </div>
+        <!-- Loader informativo de consulta -->
+        <div id="loader-documento" class="hidden mt-2 flex items-center space-x-2 text-sm text-indigo-400">
+          <svg class="animate-spin h-4 w-4 text-indigo-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+          </svg>
+          <span class="animate-pulse">Consultando si el cliente existe en el API...</span>
+        </div>
+      </div>
+
+      <!-- Campo: Tipo de Documento (De Segundas) -->
+      <div class="relative mb-6">
+        <label for="tipo_documento" class="flex items-center mb-2 text-gray-300 text-sm font-medium">
+          Tipo de Documento
+        </label>
+        <div class="relative text-gray-500 focus-within:text-gray-300">
+          <div class="absolute inset-y-0 left-0 flex items-center pl-3 pointer-events-none">
+            <svg class="stroke-current" width="24" height="24" viewBox="0 0 24 24" fill="none"
+              xmlns="http://www.w3.org/2000/svg">
+              <path d="M7 10L12 15L17 10" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"
+                stroke-linejoin="round" />
+            </svg>
+          </div>
+          <select name="tipo_documento" id="tipo_documento"
+            class="block w-full h-11 pr-5 pl-12 py-2.5 text-base font-normal shadow-xs text-gray-100 bg-gray-800 border border-gray-600 rounded-full placeholder-gray-500 focus:outline-none"
+            required>
+            <option value="31">NIT</option>
+            <option value="13" selected>Cédula de Ciudadanía</option>
+            <option value="22">Cédula Extranjería</option>
+            <option value="21">Tarjeta Extranjería</option>
+            <option value="41">Pasaporte</option>
+            <option value="42">Documento extranjero</option>
+            <option value="50">NIT Extranjero</option>
+            <option value="12">Tarjeta de identidad</option>
+            <option value="91">NUIP</option>
+            <option value="47">PEP</option>
+            <option value="11">Registro Civil</option>
+          </select>
+        </div>
       </div>
 
       <!-- Campo: Nombre -->
@@ -80,37 +119,6 @@
           <input type="text" name="nombre" id="nombre" value="{{ old('nombre') }}"
             class="block w-full h-11 pr-5 pl-12 py-2.5 text-base font-normal shadow-xs text-gray-100 bg-gray-800 border border-gray-600 rounded-full placeholder-gray-500 focus:outline-none"
             placeholder="Ingrese nombre" maxlength="50" required>
-        </div>
-      </div>
-
-      <!-- Campo: Tipo de Documento -->
-      <div class="relative mb-6">
-        <label for="tipo_documento" class="flex items-center mb-2 text-gray-300 text-sm font-medium">
-          Tipo de Documento
-        </label>
-        <div class="relative text-gray-500 focus-within:text-gray-300">
-          <div class="absolute inset-y-0 left-0 flex items-center pl-3 pointer-events-none">
-            <svg class="stroke-current" width="24" height="24" viewBox="0 0 24 24" fill="none"
-              xmlns="http://www.w3.org/2000/svg">
-              <path d="M7 10L12 15L17 10" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"
-                stroke-linejoin="round" />
-            </svg>
-          </div>
-          <select name="tipo_documento" id="tipo_documento"
-            class="block w-full h-11 pr-5 pl-12 py-2.5 text-base font-normal shadow-xs text-gray-100 bg-gray-800 border border-gray-600 rounded-full placeholder-gray-500 focus:outline-none"
-            required>
-            <option value="31">NIT</option>
-            <option value="13">Cédula de Ciudadanía</option>
-            <option value="22">Cédula Extranjería</option>
-            <option value="21">Tarjeta Extranjería</option>
-            <option value="41">Pasaporte</option>
-            <option value="42">Documento extranjero</option>
-            <option value="50">NIT Extranjero</option>
-            <option value="12">Tarjeta de identidad</option>
-            <option value="91">NUIP</option>
-            <option value="47">PEP</option>
-            <option value="11">Registro Civil</option>
-          </select>
         </div>
       </div>
 
@@ -153,13 +161,19 @@
     const LOG_PREFIX = '[CustomerForm]';
 
     // Autocompletar cuando se ingresa un documento
-    // Autocompletar cuando se ingresa un documento
     const docInput = document.getElementById('numero_documento');
+    const loaderDoc = document.getElementById('loader-documento');
+
     docInput.addEventListener('blur', async function () {
       const docNumber = this.value;
       if (!docNumber) return;
 
       console.log(`${LOG_PREFIX} Buscando cliente con documento: ${docNumber}`);
+
+      // Mostrar loader informativo
+      if (loaderDoc) {
+        loaderDoc.classList.remove('hidden');
+      }
 
       // Limpiar ID por si el usuario cambia el documento
       const customerIdInput = document.getElementById('customer_id');
@@ -197,6 +211,11 @@
         }
       } catch (error) {
         console.error(`${LOG_PREFIX} Error:`, error);
+      } finally {
+        // Ocultar loader informativo
+        if (loaderDoc) {
+          loaderDoc.classList.add('hidden');
+        }
       }
     });
 
