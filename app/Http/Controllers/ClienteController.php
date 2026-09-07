@@ -118,30 +118,36 @@ class ClienteController extends Controller
                 $statusCode = $apiResponse->getStatusCode();
                 $isSuccessfulHttp = ($statusCode >= 200 && $statusCode < 300);
 
-                // Verificar éxito lógico de API 
-                $apiData = $apiResult['data'] ?? [];
-
-                // La API real devuelve "isSuccessful" dentro de "data" o en el root?
-                // Según logs anteriores: "data": { ... "isSuccessful": true ... } no, wait.
-                // En el XML request del usuario:
-                // "isSuccessful": true,
-                // "message": "...",
-                // "data": { ... }
-                // O sea isSuccessful está en el root del JSON de la API externa.
-
-                // ProxyController devuelve: 'data' => $response->json().
-                // Asi que $apiResult['data'] contiene la respuesta completa de la API externa.
-                // Entonces $apiResult['data']['isSuccessful'] debería ser el valor.
-
+                // Log completo para diagnóstico del endpoint de actualización
                 $apiExternalResponse = $apiResult['data'] ?? [];
-                $isLogicSuccess = $apiExternalResponse['isSuccessful'] ?? false;
+                Log::info('Respuesta completa del Update', [
+                    'http_status'   => $statusCode,
+                    'proxy_success' => $apiResult['success'] ?? null,
+                    'api_response'  => $apiExternalResponse,
+                ]);
 
-                if ($isSuccessfulHttp && ($apiResult['success'] ?? false) && $isLogicSuccess) {
-                    Log::info('Cliente actualizado correctamente');
+                // El endpoint PUT puede no devolver "isSuccessful" — se confía en el código HTTP
+                $isLogicSuccess = $apiExternalResponse['isSuccessful'] 
+                    ?? ($apiResult['success'] ?? false);
+
+                // Pasar respuesta completa a la sesión para console.log en el navegador
+                session()->flash('api_debug', [
+                    'action'      => 'update',
+                    'http_status' => $statusCode,
+                    'result'      => $apiResult,
+                ]);
+
+                if ($isSuccessfulHttp && ($apiResult['success'] ?? false)) {
+                    Log::info('Cliente actualizado correctamente', ['isSuccessful' => $isLogicSuccess]);
                     return redirect()->back()->with('success', '¡Datos del cliente actualizados correctamente!');
                 } else {
-                    $msg = $apiExternalResponse['message'] ?? 'Error desconocido al actualizar';
-                    Log::error('Fallo en actualización', ['response' => $apiResult]);
+                    $msg = $apiExternalResponse['message']
+                        ?? $apiResult['message']
+                        ?? "Error HTTP {$statusCode} al actualizar";
+                    Log::error('Fallo en actualización', [
+                        'http_status'  => $statusCode,
+                        'full_result'  => $apiResult,
+                    ]);
                     return redirect()->back()->withErrors(['api' => "Error al actualizar: {$msg}"])->withInput();
                 }
 
@@ -170,11 +176,27 @@ class ClienteController extends Controller
 
                 // $apiResult['data'] es la respuesta de la API externa (proxy)
                 $apiExternalResponse = $apiResult['data'] ?? [];
-                $isLogicSuccess = $apiExternalResponse['isSuccessful'] ?? false;
-                $apiMessage = $apiExternalResponse['message'] ?? 'Error desconocido';
+                Log::info('Respuesta completa del Create', [
+                    'http_status'   => $statusCode,
+                    'proxy_success' => $apiResult['success'] ?? null,
+                    'api_response'  => $apiExternalResponse,
+                ]);
 
-                if ($isSuccessfulHttp && ($apiResult['success'] ?? false) && $isLogicSuccess) {
-                    Log::info('Cliente creado exitosamente');
+                $isLogicSuccess = $apiExternalResponse['isSuccessful']
+                    ?? ($apiResult['success'] ?? false);
+                $apiMessage = $apiExternalResponse['message']
+                    ?? $apiResult['message']
+                    ?? "Error HTTP {$statusCode}";
+
+                // Pasar respuesta completa a la sesión para console.log en el navegador
+                session()->flash('api_debug', [
+                    'action'      => 'create',
+                    'http_status' => $statusCode,
+                    'result'      => $apiResult,
+                ]);
+
+                if ($isSuccessfulHttp && ($apiResult['success'] ?? false)) {
+                    Log::info('Cliente creado exitosamente', ['isSuccessful' => $isLogicSuccess]);
                     return redirect()->back()->with('success', '¡Cliente registrado correctamente en el sistema!');
                 } else {
                     Log::error('Fallo en creación', ['msg' => $apiMessage, 'full' => $apiResult]);

@@ -160,6 +160,16 @@
   <script>
     const LOG_PREFIX = '[CustomerForm]';
 
+    @if(session('api_debug'))
+    // ─── Respuesta completa del API (desde servidor) ───────────────────────
+    const apiDebug = @json(session('api_debug'));
+    console.group(`${LOG_PREFIX} 📡 API Response — Acción: ${apiDebug.action.toUpperCase()}`);
+    console.log('HTTP Status :', apiDebug.http_status);
+    console.log('Proxy result:', apiDebug.result);
+    console.log('External API:', apiDebug.result?.data ?? null);
+    console.groupEnd();
+    @endif
+
     // Autocompletar cuando se ingresa un documento
     const docInput = document.getElementById('numero_documento');
     const loaderDoc = document.getElementById('loader-documento');

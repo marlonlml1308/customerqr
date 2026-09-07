@@ -10,7 +10,7 @@ class ProxyController extends Controller
 {
     private function getApiToken($apiUrl, $apiKey)
     {
-        $tokenResponse = Http::get("{$apiUrl}/security/CreateTokenByKey/{$apiKey}");
+        $tokenResponse = Http::timeout(10)->get("{$apiUrl}/security/CreateTokenByKey/{$apiKey}");
 
         if (!$tokenResponse->successful()) {
             throw new \Exception('Failed to obtain API token: ' . $tokenResponse->body());
@@ -59,7 +59,7 @@ class ProxyController extends Controller
             $url = "{$apiUrl}/customer/GetByIdNumber?idNumber={$docNumber}&showPhoto=false";
             Log::info('Llamando API GetByIdNumber', ['url' => $url]);
 
-            $response = Http::withToken($token)->get($url);
+            $response = Http::timeout(15)->withToken($token)->get($url);
 
             Log::info('Respuesta recibida', [
                 'status' => $response->status(),
@@ -159,7 +159,7 @@ class ProxyController extends Controller
 
             Log::info('BODY POST REQUEST (CreateCustomer):', $payload);
 
-            $response = Http::withToken($token)->post("{$apiUrl}/customer/Create", $payload);
+            $response = Http::timeout(15)->withToken($token)->post("{$apiUrl}/customer/Create", $payload);
 
             Log::info('Cliente creado', [
                 'status' => $response->status(),
@@ -229,7 +229,7 @@ class ProxyController extends Controller
             Log::info('BODY PUT REQUEST (UpdateCustomer):', $payload);
 
             // Endpoint PUT customer/Update
-            $response = Http::withToken($token)->put("{$apiUrl}/customer/Update", $payload);
+            $response = Http::timeout(15)->withToken($token)->put("{$apiUrl}/customer/Update", $payload);
 
             Log::info('Cliente actualizado', [
                 'status' => $response->status(),
