@@ -229,7 +229,7 @@ class ProxyController extends Controller
             Log::info('BODY PUT REQUEST (UpdateCustomer):', $payload);
 
             // Endpoint PUT customer/Update
-            $response = Http::timeout(15)->withToken($token)->put("{$apiUrl}/customer/Update", $payload);
+            $response = Http::timeout(15)->withToken($token)->post("{$apiUrl}/customer/Update", $payload);
 
             Log::info('Cliente actualizado', [
                 'status' => $response->status(),
